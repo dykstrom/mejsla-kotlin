@@ -26,8 +26,9 @@ import se.dykstrom.spring.coroutines.address.AddressClient
  */
 interface InspectionService {
     /**
-     * Looks up inspection results using a REST service, and keeps those with remarks. The returned inspection
-     * results will be decorated with their full address, looked up from a second REST service.
+     * Looks up inspection records using a REST service, and keeps those with remarks. The returned inspection
+     * records will be decorated with their full address, looked up from a second REST service. This function
+     * may suspend while loading the full addresses of all inspections records.
      */
     suspend fun getInspectionsWithRemarks(street: String): List<InspectionWithRemark>
 }
@@ -40,15 +41,12 @@ class InspectionServiceImpl(
     override suspend fun getInspectionsWithRemarks(street: String): List<InspectionWithRemark> {
         // Get all inspection records
         val inspections = inspectionClient.getInspections()
-        println("${Thread.currentThread().name}: Read ${inspections.size} inspections")
 
         // Keep only those with remarks
         val inspectionsWithRemark = inspections.filter { it.hasRemark() }
-        println("${Thread.currentThread().name}: Inspections with remark: ${inspectionsWithRemark.size}")
 
         // Keep only those on the requested street
         val inspectionsWithStreet = inspectionsWithRemark.filter { it.streetAddress.toLowerCase().startsWith(street.toLowerCase()) }
-        println("${Thread.currentThread().name}: Inspections with requested street: ${inspectionsWithStreet.size}")
 
         // Load full addresses
         val inspectionsWithDeferredFullAddress = inspectionsWithStreet
@@ -59,13 +57,10 @@ class InspectionServiceImpl(
                 .map { Pair(it.first, it.second.await()) }
         println("${Thread.currentThread().name}: Inspections with full address: ${inspectionsWithFullAddress.size}")
 
-        // Keep only those with a Stockholm address
-        val inspectionsWithStockholmAddress = inspectionsWithFullAddress
+        // Return only those with a Stockholm address
+        return inspectionsWithFullAddress
                 .filter { it.second.any { it.isStockholm() } }
                 .map { Pair(it.first, it.second.first { it.isStockholm() }) }
-        println("${Thread.currentThread().name}: Inspections with Stockholm address: ${inspectionsWithStockholmAddress.size}")
-
-        return inspectionsWithStockholmAddress
                 .map {
                     InspectionWithRemark(
                             name = it.first.name,
